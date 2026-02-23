@@ -3,9 +3,14 @@ import path from "path";
 import fs from "fs";
 
 // Upload directory
-const uploadDir = path.join(process.cwd(), "upload");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+const uploadBase = process.env.VERCEL ? "/tmp" : process.cwd();
+const uploadDir = path.join(uploadBase, "upload");
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (error: any) {
+  console.error("Upload directory initialization failed:", error.message);
 }
 
 // Storage

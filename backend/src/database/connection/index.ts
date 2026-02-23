@@ -1,18 +1,28 @@
 import mongoose from "mongoose";
-import dotenv from "dotenv"
-dotenv.config()
 
-import { responseMessage , status_code } from "../../common/index";
+let cachedConnectionPromise: Promise<typeof mongoose> | null = null;
 
-const MongoDB_URL : any = process.env.MONGODB_URL
+export const ConnectDB = async () => {
+  const MongoDB_URL = process.env.MONGODB_URL as string | undefined;
 
-export const ConnectDB = async ()=>{
-    try {
-        // console.log("url",MongoDB_URL)
-        await mongoose.connect(MongoDB_URL)
-        console.log(responseMessage.DB_connection_successFull);
+  if (mongoose.connection.readyState === 1) {
+    return;
+  }
 
-    } catch (error) {
-        console.log(responseMessage.DB_connection_failed , "error" , error.message)
-    }
-}
+  if (!MongoDB_URL) {
+    throw new Error("MONGODB_URL is not defined");
+  }
+
+  if (!cachedConnectionPromise) {
+    cachedConnectionPromise = mongoose.connect(MongoDB_URL);
+  }
+
+  try {
+    await cachedConnectionPromise;
+    console.log("DB connected successfully");
+  } catch (error: any) {
+    cachedConnectionPromise = null;
+    console.error("DB connection failed:", error.message);
+    throw error;
+  }
+};

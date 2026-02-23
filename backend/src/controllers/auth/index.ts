@@ -7,6 +7,13 @@ import dotenv from "dotenv"
 import nodemailer from "nodemailer";
 import { authValidation, joiValidationOptions } from "../../validation";
 dotenv.config()
+const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+const getAuthCookieOptions = () => ({
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
+    path: "/",
+});
 
 const forgotPasswordTransporter = nodemailer.createTransport({
     service: "gmail",
@@ -96,11 +103,7 @@ export const signUp = async (req , res)=>{
         export const signout = async (req, res) => {
         try {
 
-            res.clearCookie("Auth_Token", {
-            httpOnly: true,
-            sameSite: "strict",
-            secure: process.env.NODE_ENV === "production",
-            });
+            res.clearCookie("Auth_Token", getAuthCookieOptions());
 
             return res.status(status_code.SUCCESS).json({
             status: true,
@@ -155,10 +158,8 @@ export const signUp = async (req , res)=>{
                 }} , process.env.SECRET_KEY , {expiresIn : "1d"});
                 
                 res.cookie("Auth_Token" , token , {
+                    ...getAuthCookieOptions(),
                     maxAge :  1000 * 60 * 60 * 24,
-                    sameSite: "lax",  
-                    secure: false,
-                    httpOnly : true,
                 })
                 
                 res.json({status : true , message : responseMessage.otp_verifyAndSignin , user});
@@ -228,10 +229,8 @@ export const signUp = async (req , res)=>{
             }} , process.env.SECRET_KEY , {expiresIn : "1d"});
             
             res.cookie("Auth_Token" , newToken , {
+                ...getAuthCookieOptions(),
                 maxAge :  1000 * 60 * 60 * 24,
-                sameSite: "lax",  
-                secure: false,
-                httpOnly : true,
             })
 
             res.status(status_code.SUCCESS).json({
@@ -490,4 +489,3 @@ export const signUp = async (req , res)=>{
             });
         }
     }
-
