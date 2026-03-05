@@ -11,9 +11,8 @@ export const BILL_STATUS = {
 };
 
 export const TAX_TYPE = {
-  sgst: "SGST",
-  cgst: "CGST",
-  igst: "IGST"
+  SGST_CGST: "SGST_CGST",
+  IGST: "IGST",
 };
 
 export const PAYMENT_METHOD = {

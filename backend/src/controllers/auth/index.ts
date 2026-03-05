@@ -1,491 +1,310 @@
-import { authModel, otpModel } from "../../model";
+import { userModel, otpModel } from "../../database";
 import bcrypt from "bcryptjs";
 import { responseMessage, status_code } from "../../common";
-import { buildOtpEmailTemplate, otpSender } from "../../helper";
-import jwt from "jsonwebtoken"
-import dotenv from "dotenv"
-import nodemailer from "nodemailer";
 import { authValidation, joiValidationOptions } from "../../validation";
-dotenv.config()
-const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
-const getAuthCookieOptions = () => ({
-    httpOnly: true,
-    secure: isProduction,
-    sameSite: (isProduction ? "none" : "lax") as "none" | "lax",
-    path: "/",
+import {deleteFileIfExists,sendSuccess,sendError,} from "../../helper";
+import jwt from "jsonwebtoken";
+import nodemailer from "nodemailer";
+import { buildOtpEmailTemplate, otpSender } from "../../helper";
+import { config } from "../../../config";
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: config.EMAIL,
+    pass: config.PASS,
+  },
 });
 
-const forgotPasswordTransporter = nodemailer.createTransport({
-    service: "gmail",
-    auth: {
-        user: process.env.EMAIL,
-        pass: process.env.PASS,
-    },
+const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+const deactivatedMsg = "Your account is deactivated. Please contact admin.";
+
+const extractFileNameFromValue = (value: any) => {
+  if (!value) return "";
+  const raw = String(value).trim();
+  if (!raw) return "";
+  const normalized = raw.replace(/\\/g, "/");
+  const parts = normalized.split("/").filter(Boolean);
+  return parts[parts.length - 1] || "";
+};
+
+const getExistingSignatureName = (signatureImg: any) => {
+  if (!signatureImg) return "";
+  if (typeof signatureImg === "string") return extractFileNameFromValue(signatureImg);
+  return extractFileNameFromValue(signatureImg.filename || signatureImg.path || "");
+};
+
+const buildSignaturePayload = (fileName: string) => ({
+  path: fileName,
+  filename: fileName,
+  originalName: fileName,
+  size: 0,
+  mimetype: "",
 });
 
-const generateOtpCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+const emptySignaturePayload = () => ({
+  path: "",
+  filename: "",
+  originalName: "",
+  size: 0,
+  mimetype: "",
+});
 
-//================ signUp controller =======================
-export const signUp = async (req , res)=>{
 
-    const {error, value} = authValidation.signUpValidation.validate(req.body, joiValidationOptions)
+// ============== Signin controller ==========================
+export const signIn = async (req, res) => {
+  const { error, value } = authValidation.signInValidation.validate(
+    req.body,
+    joiValidationOptions
+  );
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
 
-    if (error) {
-        return res.status(400).json({
-        status: false,
-        message: error.details[0].message,
-        });
+  try {
+    const { email, password } = value;
+   
+    const user = await userModel.findOne({ email, isDeleted: false });
+    if (!user) return sendError(res, status_code.BAD_REQUEST, responseMessage.userNotFound);
+   
+    if (user.isActive === false) return sendError(res, status_code.FORBIDDEN, deactivatedMsg);
+    const match = bcrypt.compareSync(password, user.password);
+    if (!match) return sendError(res, status_code.BAD_REQUEST, responseMessage.incorrectPassword);
+
+    const isOtpSent = await otpSender(email);
+    
+    return sendSuccess(res, { isOtpSent }, responseMessage.signIn_successful);
+  } catch (err) {
+    return sendError(res, status_code.INTERNAL_SERVER_ERROR, responseMessage.signIn_failed, err);
+  }
+};
+
+// ============== Signout controller ==========================
+export const signout = async (req, res) => {
+  return sendSuccess(res, {}, responseMessage.signOut_SuccessFull);
+};
+
+
+// ============== verify otp controller ==========================
+export const verifyOTP = async (req, res) => {
+  const { error, value } = authValidation.verifyOtpValidation.validate(
+    req.body,
+    joiValidationOptions
+  );
+  
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+
+  try {
+    const { email, otp, purpose = "signin" } = value;
+    
+    const record = await otpModel.findOne({ email, purpose } as any).sort({ createdAt: -1 });
+    
+      if (!record) {
+      const msg = purpose === "reset"? responseMessage.forgotPassword_otp_invalid : "OTP is incorrect !";
+      return sendError(res, status_code.BAD_REQUEST, msg);
     }
 
-    try {
-        const {name , email , role , password, phone, address, city, state, pincode} = value
-        const hashedPassword = bcrypt.hashSync(password , 12)
-
-        const userExist = await authModel.Auth_Collection.findOne({email});
-        if(userExist){
-            return res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.user_alreadyExist , userExist})
-        }
-
-        const result = await authModel.Auth_Collection.create({
-            name,
-            email,
-            role,
-            password: hashedPassword,
-            phone: phone || "",
-            address: address || "",
-            city: city || "",
-            state: state || "",
-            pincode: pincode || "",
-        });
-        
-        res.status(status_code.SUCCESS).json({status : true , message : responseMessage.signUp_successfull})
-    } catch (error) {
-        res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.signUp_failed})
-    }
-}
-
-
-    //================ signIn controller =======================
-    export const signIn = async (req ,res)=>{
-        const {error, value} = authValidation.signInValidation.validate(req.body, joiValidationOptions)
-
-        if (error) {
-            return res.status(400).json({
-            status: false,
-            message: error.details[0].message,
-            });
-        }
-
-
-        try {
-            const {email , password } = value
-            const user = await authModel.Auth_Collection.findOne({email})
-
-            if(!user){
-                return res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.userNotFound })
-            }
-
-            const isMatched = bcrypt.compareSync(password , user.password);
-            if(!isMatched){
-                return res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.incorrectPassword })
-            }
-
-            const isOtpSent = await otpSender(email)
-        
-            res.status(status_code.SUCCESS).json({status : true , message : responseMessage.signIn_successful , isOtpSent})
-
-        } catch (error) {
-            res.status(status_code.INTERNAL_SERVER_ERROR).json({status : false , message : responseMessage.signIn_failed , error})
-        }
+    if (record.expireAt < new Date()) {
+      await otpModel.deleteMany({ email, purpose } as any);
+      const msg = purpose === "reset" ? responseMessage.forgotPassword_otp_expired : "OTP is expired !";
+      return sendError(res, status_code.BAD_REQUEST, msg);
     }
 
-        /*================= Signout Controller ==============*/
-        export const signout = async (req, res) => {
-        try {
-
-            res.clearCookie("Auth_Token", getAuthCookieOptions());
-
-            return res.status(status_code.SUCCESS).json({
-            status: true,
-            message: responseMessage.signOut_SuccessFull
-            });
-
-        } catch (error) {
-            return res.status(500).json({
-            status: false,
-            message: responseMessage.signOut_failed
-            });
-        }
-        };
-
-
-
-    /*============ OTP Verifing controller ===========*/
-    export const verifyOTP = async (req ,res)=>{
-        const { error, value } = authValidation.verifyOtpValidation.validate(req.body, joiValidationOptions);
-        if (error) {
-            return res.status(status_code.BAD_REQUEST).json({
-                status: false,
-                message: error.details[0].message,
-            });
-        }
-
-        try {
-                const {email , otp} = value;
-                const record = await otpModel.OTP_Collection.findOne({email , otp, purpose: "signin"});
-
-                if(!record){
-                    return res.status(status_code.BAD_REQUEST).json({status : false , message : "OTP is incorrect !" });
-                }
-
-                if(record.expireAt < new Date(Date.now())){
-                    return res.status(status_code.BAD_REQUEST).json({status : false , message : "OTP is expired !"});
-                }
-
-                await otpModel.OTP_Collection.deleteMany({email, purpose: "signin"} as any);
-
-                const user = await authModel.Auth_Collection.findOne({email});
-                const token = jwt.sign({user : {
-                    _id : user._id,
-                    name : user.name,
-                    email : user.email,
-                    role : user.role,
-                    phone: user.phone || "",
-                    address: user.address || "",
-                    city: user.city || "",
-                    state: user.state || "",
-                    pincode: user.pincode || ""
-                }} , process.env.SECRET_KEY , {expiresIn : "1d"});
-                
-                res.cookie("Auth_Token" , token , {
-                    ...getAuthCookieOptions(),
-                    maxAge :  1000 * 60 * 60 * 24,
-                })
-                
-                res.json({status : true , message : responseMessage.otp_verifyAndSignin , user});
-                
-        } catch (error) {
-            res.status(400).json({status : false , message : responseMessage.otp_invalid , error : error.message})
-        }
+    const isValid = purpose === "reset"? bcrypt.compareSync(otp, record.otp) : record.otp.toString() === otp.toString();
+    
+    if (!isValid) {
+      const msg = purpose === "reset" ? responseMessage.forgotPassword_otp_invalid  : "OTP is incorrect !";
+      return sendError(res, status_code.BAD_REQUEST, msg);
     }
 
-    /*============ Update Profile controller ===========*/
-    export const updateProfile = async (req , res) => {
-        const {error, value} = authValidation.updateProfileValidation.validate(req.body, joiValidationOptions)
-
-        if (error) {
-            return res.status(400).json({
-            status: false,
-            message: error.details[0].message,
-            });
-        }
-
-        try {
-            const userId = (req as any).user._id;
-            const { name, email, phone, address, city, state, pincode } = value;
-            
-            const updateData: any = {};
-            if (name !== undefined) updateData.name = name;
-            if (email !== undefined) updateData.email = email;
-            if (phone !== undefined) updateData.phone = phone;
-            if (address !== undefined) updateData.address = address;
-            if (city !== undefined) updateData.city = city;
-            if (state !== undefined) updateData.state = state;
-            if (pincode !== undefined) updateData.pincode = pincode;
-
-            if (email && email !== (req as any).user.email) {
-                const emailExists = await authModel.Auth_Collection.findOne({ email, _id: { $ne: userId } });
-                if (emailExists) {
-                    return res.status(status_code.BAD_REQUEST).json({
-                        status: false,
-                        message: "Email already in use by another account"
-                    });
-                }
-            }
-
-            const updatedUser = await authModel.Auth_Collection.findByIdAndUpdate(
-                userId,
-                updateData,
-                { new: true, runValidators: true }
-            ).select("-password");
-
-            if (!updatedUser) {
-                return res.status(status_code.NOT_FOUND).json({
-                    status: false,
-                    message: "User not found"
-                });
-            }
-
-            const newToken = jwt.sign({user : {
-                _id : updatedUser._id,
-                name : updatedUser.name,
-                email : updatedUser.email,
-                role : updatedUser.role,
-                phone: updatedUser.phone || "",
-                address: updatedUser.address || "",
-                city: updatedUser.city || "",
-                state: updatedUser.state || "",
-                pincode: updatedUser.pincode || ""
-            }} , process.env.SECRET_KEY , {expiresIn : "1d"});
-            
-            res.cookie("Auth_Token" , newToken , {
-                ...getAuthCookieOptions(),
-                maxAge :  1000 * 60 * 60 * 24,
-            })
-
-            res.status(status_code.SUCCESS).json({
-                status: true,
-                message: "Profile updated successfully",
-                user: updatedUser
-            });
-
-        } catch (error) {
-            res.status(status_code.INTERNAL_SERVER_ERROR).json({
-                status: false,
-                message: "Failed to update profile",
-                error: error.message
-            });
-        }
+    if (purpose === "reset") {
+      return sendSuccess(res, {}, responseMessage.forgotPassword_otp_verified);
     }
 
-    /*============ Forgot Password: Send OTP ===========*/
-    export const sendForgotPasswordOtp = async (req, res) => {
-        const { error, value } = authValidation.forgotPasswordSendOtpValidation.validate(req.body, joiValidationOptions);
+    await otpModel.deleteMany({ email, purpose: "signin" } as any);
+    const user = await userModel.findOne({ email, isDeleted: false });
+    if (!user) return sendError(res, status_code.BAD_REQUEST, responseMessage.userNotFound);
+    if (user.isActive === false) return sendError(res, status_code.FORBIDDEN, deactivatedMsg);
 
-        if (error) {
-            return res.status(status_code.BAD_REQUEST).json({
-                status: false,
-                message: error.details[0].message,
-            });
-        }
+    const token = jwt.sign(
+      { user: { _id: user._id, name: user.name, email: user.email, role: user.role } },
+      config.SECRET_KEY,
+      { expiresIn: "24h" }
+    );
 
-        try {
-            const { email } = value;
-            const user = await authModel.Auth_Collection.findOne({ email });
+    return sendSuccess(res, { user, token }, responseMessage.otp_verifyAndSignin);
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, responseMessage.otp_invalid, err.message);
+  }
+};
 
-            if (!user) {
-                return res.status(status_code.NOT_FOUND).json({
-                    status: false,
-                    message: responseMessage.userNotFound,
-                });
-            }
+// ============== update profile controller ==========================
+export const updateProfile = async (req, res) => {
+  const { error, value } = authValidation.updateProfileValidation.validate(
+    req.body,
+    joiValidationOptions
+  );
+  if (error) {
+    return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+  }
 
-            const otp = generateOtpCode();
-            const otpHash = bcrypt.hashSync(otp, 10);
-            const expireAt = new Date(Date.now() + 1000 * 60 * 3);
+  try {
+    const userId = (req as any).user._id;
+    const updateData: any = { ...value };
+    const existing: any = await userModel.findById(userId).select("signatureImg");
 
-            await otpModel.OTP_Collection.deleteMany({ email, purpose: "reset" } as any);
-            await otpModel.OTP_Collection.create({
-                email,
-                otp: otpHash,
-                expireAt,
-                purpose: "reset",
-            } as any);
+    const removeSignatureValue = value?.removeSignature;
+    const shouldRemoveSignature =
+      removeSignatureValue === true ||
+      removeSignatureValue === "true" ||
+      removeSignatureValue === "1";
 
-            const html = buildOtpEmailTemplate({
-                otp,
-                recipientName: user.name,
-                purposeText: "password reset",
-                supportEmail: process.env.EMAIL || "support@medicobilling.com",
-                brandName: "Medico Billing",
-                validMinutes: 3,
-                logoUrl: process.env.APP_LOGO_URL,
-            });
-
-            await forgotPasswordTransporter.sendMail({
-                from: `Security Team <${process.env.EMAIL}>`,
-                to: email,
-                subject: "Password Reset OTP",
-                html,
-            });
-
-            return res.status(status_code.SUCCESS).json({
-                status: true,
-                message: responseMessage.forgotPassword_otp_sent,
-            });
-        } catch (error) {
-            return res.status(status_code.INTERNAL_SERVER_ERROR).json({
-                status: false,
-                message: responseMessage.forgotPassword_otp_verify_failed,
-                error: error.message,
-            });
-        }
-    };
-
-    /*============ Forgot Password: Verify OTP ===========*/
-    export const verifyForgotPasswordOtp = async (req, res) => {
-        const { error, value } = authValidation.forgotPasswordVerifyOtpValidation.validate(req.body, joiValidationOptions);
-
-        if (error) {
-            return res.status(status_code.BAD_REQUEST).json({
-                status: false,
-                message: error.details[0].message,
-            });
-        }
-
-        try {
-            const { email, otp } = value;
-            const record = await otpModel.OTP_Collection.findOne({ email, purpose: "reset" } as any).sort({ createdAt: -1 });
-
-            if (!record) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.forgotPassword_otp_invalid,
-                });
-            }
-
-            if (record.expireAt < new Date()) {
-                await otpModel.OTP_Collection.deleteMany({ email, purpose: "reset" } as any);
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.forgotPassword_otp_expired,
-                });
-            }
-
-            const isMatched = bcrypt.compareSync(otp, record.otp);
-            if (!isMatched) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.forgotPassword_otp_invalid,
-                });
-            }
-
-            return res.status(status_code.SUCCESS).json({
-                status: true,
-                message: responseMessage.forgotPassword_otp_verified,
-            });
-        } catch (error) {
-            return res.status(status_code.INTERNAL_SERVER_ERROR).json({
-                status: false,
-                message: responseMessage.forgotPassword_otp_send_failed,
-                error: error.message,
-            });
-        }
-    };
-
-    /*============ Forgot Password: Reset Password ===========*/
-    export const resetForgotPassword = async (req, res) => {
-        const { error, value } = authValidation.forgotPasswordResetValidation.validate(req.body, joiValidationOptions);
-
-        if (error) {
-            return res.status(status_code.BAD_REQUEST).json({
-                status: false,
-                message: error.details[0].message,
-            });
-        }
-
-        try {
-            const { email, otp, newPassword, confirmPassword } = value;
-
-            if (newPassword !== confirmPassword) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.password_confirm_mismatch,
-                });
-            }
-
-            const user = await authModel.Auth_Collection.findOne({ email });
-            if (!user) {
-                return res.status(status_code.NOT_FOUND).json({
-                    status: false,
-                    message: responseMessage.userNotFound,
-                });
-            }
-
-            const record = await otpModel.OTP_Collection.findOne({ email, purpose: "reset" } as any).sort({ createdAt: -1 });
-
-            if (!record) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.forgotPassword_otp_invalid,
-                });
-            }
-
-            if (record.expireAt < new Date()) {
-                await otpModel.OTP_Collection.deleteMany({ email, purpose: "reset" } as any);
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.forgotPassword_otp_expired,
-                });
-            }
-
-            const isOtpMatched = bcrypt.compareSync(otp, record.otp);
-            if (!isOtpMatched) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.forgotPassword_otp_invalid,
-                });
-            }
-
-            user.password = bcrypt.hashSync(newPassword, 12);
-            await user.save();
-            await otpModel.OTP_Collection.deleteMany({ email, purpose: "reset" } as any);
-
-            return res.status(status_code.SUCCESS).json({
-                status: true,
-                message: responseMessage.forgotPassword_reset_success,
-            });
-        } catch (error) {
-            return res.status(status_code.INTERNAL_SERVER_ERROR).json({
-                status: false,
-                message: responseMessage.forgotPassword_reset_failed,
-                error: error.message,
-            });
-        }
-    };
-
-    /*============ Change Password controller ===========*/
-    export const changePassword = async (req, res) => {
-        const { error, value } = authValidation.changePasswordValidation.validate(req.body, joiValidationOptions);
-
-        if (error) {
-            return res.status(status_code.BAD_REQUEST).json({
-                status: false,
-                message: error.details[0].message,
-            });
-        }
-
-        try {
-            const userId = (req as any).user?._id;
-            const { oldPassword, newPassword, confirmPassword } = value;
-
-            if (newPassword !== confirmPassword) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.password_confirm_mismatch,
-                });
-            }
-
-            const user = await authModel.Auth_Collection.findById(userId);
-
-            if (!user) {
-                return res.status(status_code.NOT_FOUND).json({
-                    status: false,
-                    message: responseMessage.userNotFound,
-                });
-            }
-
-            const isOldPasswordMatched = bcrypt.compareSync(oldPassword, user.password);
-            if (!isOldPasswordMatched) {
-                return res.status(status_code.BAD_REQUEST).json({
-                    status: false,
-                    message: responseMessage.oldPassword_incorrect,
-                });
-            }
-
-            const hashedPassword = bcrypt.hashSync(newPassword, 12);
-            user.password = hashedPassword;
-            await user.save();
-
-            return res.status(status_code.SUCCESS).json({
-                status: true,
-                message: responseMessage.changePassword_success,
-            });
-        } catch (error) {
-            return res.status(status_code.INTERNAL_SERVER_ERROR).json({
-                status: false,
-                message: responseMessage.changePassword_failed,
-                error: error.message,
-            });
-        }
+    if (shouldRemoveSignature) {
+      deleteFileIfExists(existing?.signatureImg);
+      updateData.signatureImg = emptySignaturePayload();
     }
+
+    if (!shouldRemoveSignature && req.body.signatureImg) {
+      const newSig = extractFileNameFromValue(req.body.signatureImg);
+      const oldSig = getExistingSignatureName(existing?.signatureImg);
+      if (newSig && newSig !== oldSig) {
+        deleteFileIfExists(existing?.signatureImg);
+        updateData.signatureImg = buildSignaturePayload(newSig);
+      }
+    }
+
+    if (value.email) {
+      const exists = await userModel.findOne({email: value.email,_id: { $ne: userId },
+      });
+      if (exists) {
+        return sendError(res, status_code.BAD_REQUEST, "Email already in use by another account");
+      }
+    }
+
+    const updated: any = await userModel.findByIdAndUpdate(userId, updateData, { new: true }).select("-password");
+   
+    if (!updated) {
+      return sendError(res, status_code.NOT_FOUND, "User not found");
+    }
+
+    const token = jwt.sign(
+      { user: { _id: updated._id, name: updated.name, email: updated.email, role: updated.role } },
+      config.SECRET_KEY,
+      { expiresIn: "1d" }
+    );
+
+    return sendSuccess(res, { user: updated, token }, "Profile updated successfully");
+  } catch (err: any) {
+    return sendError(res, status_code.INTERNAL_SERVER_ERROR, "Failed to update profile", err.message);
+  }
+};
+
+// ============== Forget Passworrd controller ==========================
+export const sendForgotPasswordOtp = async (req, res) => {
+  const { error, value } = authValidation.forgotPasswordSendOtpValidation.validate(
+    req.body,
+    joiValidationOptions
+  );
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+
+  try {
+    const { email } = value;
+    const user = await userModel.findOne({ email, isDeleted: false });
+    if (!user) return sendError(res, status_code.NOT_FOUND, responseMessage.userNotFound);
+
+    const otp = generateOtp();
+    const hash = bcrypt.hashSync(otp, 10);
+    const expireAt = new Date(Date.now() + 1000 * 60 * 3);
+
+    await otpModel.deleteMany({ email, purpose: "reset" } as any);
+    await otpModel.create({ email, otp: hash, expireAt, purpose: "reset" } as any);
+
+    const html = buildOtpEmailTemplate({
+      otp,
+      recipientName: user.name,
+      purposeText: "password reset",
+      supportEmail: config.EMAIL || "support@medicobilling.com",
+      brandName: "Medico Billing",
+      validMinutes: 3,
+      logoUrl: config.APP_LOGO_URL,
+    });
+
+    await transporter.sendMail({
+      from: `Security Team <${config.EMAIL}>`,
+      to: email,
+      subject: "Password Reset OTP",
+      html,
+    });
+
+    return sendSuccess(res, {}, responseMessage.forgotPassword_otp_sent);
+  } catch (err) {
+    return sendError(res, status_code.INTERNAL_SERVER_ERROR, responseMessage.forgotPassword_otp_verify_failed, err.message);
+  }
+};
+
+// ==============Reset Forget Passworrd controller ==========================
+export const resetForgotPassword = async (req, res) => {
+  const { error, value } = authValidation.forgotPasswordResetValidation.validate(
+    req.body,
+    joiValidationOptions
+  );
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+
+  try {
+    const { email, otp, newPassword, confirmPassword } = value;
+    if (newPassword !== confirmPassword) {
+      return sendError(res, status_code.BAD_REQUEST, responseMessage.password_confirm_mismatch);
+    }
+
+    const user = await userModel.findOne({ email, isDeleted: false });
+    if (!user) return sendError(res, status_code.NOT_FOUND, responseMessage.userNotFound);
+
+    const record: any = await otpModel.findOne({ email, purpose: "reset" } as any).sort({ createdAt: -1 });
+    
+    if (!record) return sendError(res, status_code.BAD_REQUEST, responseMessage.forgotPassword_otp_invalid);
+    
+    if (record.expireAt < new Date()) {
+      await otpModel.deleteMany({ email, purpose: "reset" } as any);
+      return sendError(res, status_code.BAD_REQUEST, responseMessage.forgotPassword_otp_expired);
+    }
+
+    const isMatch = bcrypt.compareSync(otp, record.otp);
+    if (!isMatch) return sendError(res, status_code.BAD_REQUEST, responseMessage.forgotPassword_otp_invalid);
+
+    user.password = bcrypt.hashSync(newPassword, 12);
+    await user.save();
+    await otpModel.deleteMany({ email, purpose: "reset" } as any);
+
+    return sendSuccess(res, {}, responseMessage.forgotPassword_reset_success);
+  } catch (err) {
+    return sendError(res, status_code.INTERNAL_SERVER_ERROR, responseMessage.forgotPassword_reset_failed, err.message);
+  }
+};
+
+// ============== Change Passworrd controller ==========================
+export const changePassword = async (req, res) => {
+  const { error, value } = authValidation.changePasswordValidation.validate(
+    req.body,
+    joiValidationOptions
+  );
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+
+  try {
+    const userId = (req as any).user?._id;
+    const { oldPassword, newPassword, confirmPassword } = value;
+    if (newPassword !== confirmPassword) {
+      return sendError(res, status_code.BAD_REQUEST, responseMessage.password_confirm_mismatch);
+    }
+
+    const user: any = await userModel.findById(userId);
+    if (!user) return sendError(res, status_code.NOT_FOUND, responseMessage.userNotFound);
+
+    const match = bcrypt.compareSync(oldPassword, user.password);
+    if (!match) return sendError(res, status_code.BAD_REQUEST, responseMessage.oldPassword_incorrect);
+
+    user.password = bcrypt.hashSync(newPassword, 12);
+    await user.save();
+    
+    return sendSuccess(res, {}, responseMessage.changePassword_success);
+  } catch (err) {
+    return sendError(res, status_code.INTERNAL_SERVER_ERROR, responseMessage.changePassword_failed, err.message);
+  }
+};

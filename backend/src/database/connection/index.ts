@@ -1,28 +1,16 @@
 import mongoose from "mongoose";
+import { config } from "../../../config";
 
-let cachedConnectionPromise: Promise<typeof mongoose> | null = null;
+mongoose.set("strictQuery", false);
+
+const dbUrl = config.MONGODB_URL
 
 export const ConnectDB = async () => {
-  const MongoDB_URL = process.env.MONGODB_URL as string | undefined;
-
-  if (mongoose.connection.readyState === 1) {
-    return;
-  }
-
-  if (!MongoDB_URL) {
-    throw new Error("MONGODB_URL is not defined");
-  }
-
-  if (!cachedConnectionPromise) {
-    cachedConnectionPromise = mongoose.connect(MongoDB_URL);
-  }
-
   try {
-    await cachedConnectionPromise;
-    console.log("DB connected successfully");
+    await mongoose.connect(dbUrl);
+    console.log("Database successfully connected");
   } catch (error: any) {
-    cachedConnectionPromise = null;
-    console.error("DB connection failed:", error.message);
-    throw error;
+    console.error("Database connection failed:", error.message);
+    process.exit(1);
   }
 };

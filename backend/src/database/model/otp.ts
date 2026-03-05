@@ -1,5 +1,5 @@
 import mongoose, { Document } from "mongoose";
-import { modelName } from "../common";
+import { modelName } from "../../common";
 
 export interface OTPDocument extends Document {
   email: string;
@@ -18,7 +18,5 @@ const otpSchema = new mongoose.Schema<OTPDocument>(
   { timestamps: true }
 );
 
-export const OTP_Collection = mongoose.model<OTPDocument>(
-  modelName.otpModelName,
-  otpSchema
-);
+export const otpModel = mongoose.model<OTPDocument>(modelName.otpModelName,otpSchema);
+

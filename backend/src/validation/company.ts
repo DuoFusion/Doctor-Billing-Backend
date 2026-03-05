@@ -1,31 +1,38 @@
 import Joi from "joi";
-import { emailField, gstField, phoneField, pincodeField } from "./common";
+import { emailField, gstField, objectIdField, phoneField, pincodeField } from "./common";
 
 export const companyDataValidation = Joi.object({
-  companyName: Joi.string().trim().min(3).max(200).required(),
-  gstNumber: gstField.allow("").optional(),
+  name: Joi.string().trim().min(3).max(200).required(),
+  userId: objectIdField.optional(),
+  medicalStoreId: objectIdField.optional(),
+  gstNumber: gstField.required(),
   phone: phoneField.required(),
-  email: emailField.allow("").optional(),
-  address: Joi.string().trim().min(5).max(500).allow("").optional(),
-  city: Joi.string().trim().min(2).max(100).allow("").optional(),
-  state: Joi.string().trim().min(2).max(100).allow("").optional(),
+  email: emailField.required(),
+  address: Joi.string().trim().min(5).max(500).required(),
+  city: Joi.string().trim().min(2).max(100).required(),
+  state: Joi.string().trim().min(2).max(100).required(),
   pincode: Joi.alternatives().try(
     pincodeField,
     Joi.number().integer().min(100000).max(999999)
-  ).allow("").optional(),
+  ).required(),
 });
 
 export const companyUpdateDataValidation = Joi.object({
-  companyName: Joi.string().trim().min(3).max(200).optional(),
-  gstNumber: gstField.allow("").optional(),
-  phone: phoneField.optional(),
-  email: emailField.allow("").optional(),
-  address: Joi.string().trim().min(5).max(500).allow("").optional(),
-  city: Joi.string().trim().min(2).max(100).allow("").optional(),
-  state: Joi.string().trim().min(2).max(100).allow("").optional(),
+  name: Joi.string().trim().min(3).max(200).required(),
+  medicalStoreId: objectIdField.optional(),
+  gstNumber: gstField.required(),
+  phone: phoneField.required(),
+  email: emailField.required(),
+  address: Joi.string().trim().min(5).max(500).required(),
+  city: Joi.string().trim().min(2).max(100).required(),
+  state: Joi.string().trim().min(2).max(100).required(),
   pincode: Joi.alternatives().try(
     pincodeField,
     Joi.number().integer().min(100000).max(999999)
-  ).allow("").optional(),
-}).min(1);
+  ).required(),
+});
+
+export const toggleCompanyStatusValidation = Joi.object({
+  isActive: Joi.boolean().required(),
+});
 

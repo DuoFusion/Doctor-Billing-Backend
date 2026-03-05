@@ -5,7 +5,7 @@ export const status_code = {
 
   // 4xx - Client Errors
   BAD_REQUEST: 400,       
-  UNAUTHORIZED: 401,     
+  UNAUTHORIZED: 419,     
   FORBIDDEN: 403,         
   NOT_FOUND: 404,         
   TOKEN_EXPIRED: 410,     

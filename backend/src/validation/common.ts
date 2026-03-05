@@ -1,5 +1,5 @@
 import Joi from "joi";
-import { BILL_STATUS, PAYMENT_METHOD, ROLES, STOCK_STATUS } from "../common";
+import { BILL_STATUS, PAYMENT_METHOD, ROLES, STOCK_STATUS, TAX_TYPE } from "../common";
 
 export const objectIdPattern = /^[a-fA-F0-9]{24}$/;
 export const phonePattern = /^[0-9]{10}$/;
@@ -36,3 +36,4 @@ export const gstField = Joi.string().trim().uppercase().pattern(gstPattern).mess
 export const paymentMethodField = Joi.string().valid(...Object.values(PAYMENT_METHOD));
 export const billStatusField = Joi.string().valid(...Object.values(BILL_STATUS));
 export const stockStatusField = Joi.string().valid(...Object.values(STOCK_STATUS));
+export const taxTypeField = Joi.string().valid(...Object.values(TAX_TYPE));

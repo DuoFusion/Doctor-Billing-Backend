@@ -1,14 +1,13 @@
-import express from "express"
-import { companyController } from "../controllers"
-import upload from "../helper/uploadFiles";
-import { verifyToken } from "../middleware";
+import express from "express";
+import { companyController } from "../controllers";
 
-const router = express.Router()
+const router = express.Router();
 
-router.get("/get/company" , verifyToken,   companyController.getAllCompanies);
-router.post("/addNew/company" , verifyToken , upload.single("logoImage"), companyController.addNewCompany)
-router.get("/getById/company/:id", verifyToken, companyController.getCompanyById);
-router.put("/update/company/:id" , verifyToken ,upload.single("logoImage"), companyController.updateCompany)
-router.delete("/delete/company/:id" , verifyToken , companyController.deleteCompany)
+router.post("/add", companyController.add_company);
+router.put("/:id", companyController.update_company_by_id);
+router.patch("/:id/status", companyController.toggle_company_active_status);
+router.delete("/delete/:id", companyController.delete_company_by_id);
+router.get("/all", companyController.get_all_company);
+router.get("/:id", companyController.get_company_by_id);
 
-export default router
+export  const companyRouter =  router;

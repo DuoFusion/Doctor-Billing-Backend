@@ -1,14 +1,14 @@
-import express from "express"
-import { productController } from "../controllers"
-import { verifyToken } from "../middleware"
+import express from "express";
+import { productController } from "../controllers";
 
-const router = express.Router()
+const router = express.Router();
 
-router.get("/get/products" ,  verifyToken , productController.getAllProducts)
-router.post("/addNew/product" , verifyToken ,  productController.addNewProduct)
-router.get("/get/my-products",  verifyToken , productController.getMyProducts);
-router.get("/getById/product/:id", verifyToken, productController.getProductById);
-router.put("/update/product/:id" , verifyToken ,  productController.updateProduct)
-router.delete("/delete/product/:id" , verifyToken ,  productController.deleteProduct)
+router.post("/add", productController.add_product);
+router.put("/:id", productController.update_product_by_id);
+router.patch("/:id/status", productController.toggle_product_active_status);
+router.delete("/delete/:id", productController.delete_product_by_id);
+router.get("/all", productController.get_all_product);
+router.get("/get/my-products", productController.get_my_product);
+router.get("/:id", productController.get_product_by_id);
 
-export default router
+export  const  productRouter = router;

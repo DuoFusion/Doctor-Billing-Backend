@@ -1,16 +1,14 @@
 import nodemailer from "nodemailer";
-import dotenv from "dotenv";
-import { otpModel } from "../model";
+import { otpModel } from "../database";
 import { responseMessage } from "../common";
 import { buildOtpEmailTemplate } from "./otp_email_template";
-
-dotenv.config();
+import { config } from "../../config";
 
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL,
-    pass: process.env.PASS,
+    user: config.EMAIL,
+    pass: config.PASS,
   },
 });
 
@@ -28,20 +26,20 @@ export const otpSender = async (email: string) => {
   const expireAt = new Date(Date.now() + 1000 * 60 * 3);
 
   try {
-    await otpModel.OTP_Collection.deleteMany({ email, purpose: "signin" } as any);
-    await otpModel.OTP_Collection.create({ email, otp, expireAt, purpose: "signin" } as any);
+    await otpModel.deleteMany({ email, purpose: "signin" } as any);
+    await otpModel.create({ email, otp, expireAt, purpose: "signin" } as any);
 
     const html = buildOtpEmailTemplate({
       otp: otpString,
       purposeText: "sign in verification",
-      supportEmail: process.env.EMAIL || "support@medicobilling.com",
+      supportEmail: config.EMAIL || "support@medicobilling.com",
       brandName: "Medico Billing",
       validMinutes: 3,
-      logoUrl: process.env.APP_LOGO_URL,
+      logoUrl: config.APP_LOGO_URL,
     });
 
     await transporter.sendMail({
-      from: `Security Team <${process.env.EMAIL}>`,
+      from: `Security Team <${config.EMAIL}>`,
       to: email,
       subject: "Your Account OTP Verification",
       html,

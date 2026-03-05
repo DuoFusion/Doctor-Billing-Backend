@@ -1,8 +1,9 @@
 export const modelName = {
-     authModelName : "auth_collection",
-     otpModelName : "otp_collection" ,
-     companyModelName : "company_collection",
-     productModelName : "product_collection",
-     categoryModelName: "category_collection",
-     billModelName : "bill_collection"
+     userModelName : "user",
+     otpModelName : "otp" ,
+     companyModelName : "company",
+     productModelName : "product",
+     categoryModelName: "category",
+     billModelName : "bill",
+     storeModelName : "medicalStore"
 } as const

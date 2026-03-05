@@ -1,13 +1,25 @@
 import Joi from "joi";
-import { emailField, phoneField, pincodeField, roleField } from "./common";
+import { emailField, objectIdField, passwordField, phoneField } from "./common";
+
+export const addUserValidation = Joi.object({
+  email: emailField.required(),
+  name: Joi.string().trim().min(3).max(200).required(),
+  password: passwordField.required(),
+  phone: phoneField.allow("").optional(),
+  medicalStoreId: objectIdField.required().messages({
+    "any.required": "Please select medical store",
+  }),
+});
 
 export const userValidaiton = Joi.object({
   email: emailField.required(),
   name: Joi.string().trim().min(3).max(200).required(),
-  role: roleField.required(),
   phone: phoneField.allow("").optional(),
-  address: Joi.string().trim().max(500).allow("").optional(),
-  city: Joi.string().trim().min(2).max(100).allow("").optional(),
-  state: Joi.string().trim().min(2).max(100).allow("").optional(),
-  pincode: pincodeField.allow("").optional(),
+  medicalStoreId: objectIdField.required().messages({
+    "any.required": "Please select medical store",
+  }),
+});
+
+export const toggleUserStatusValidation = Joi.object({
+  isActive: Joi.boolean().required(),
 });

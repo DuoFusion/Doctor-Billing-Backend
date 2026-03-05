@@ -1,20 +1,25 @@
 import express from "express";
-import authRouter from "./auth"
-import companyRouter from "./company"
-import userRouter from "./user"
-import productRouter from "./product"
-import billRouter from "./bill"
-import categoryRouter from "./category"
-import path from "path";
+import { verifyToken } from "../middleware";
+import { companyRouter } from "./company";
+import { productRouter } from "./product";
+import { CatergoryRouter } from "./category";
+import { billRouter } from "./bill";
+import { accountRoute } from "./account";
+import { authRouter } from "./auth";
+import { userRouter } from "./user";
+import { medicalStoreRouter } from "./medicalStore";
 
 const router = express.Router();
 
-router.use("/", authRouter);
-router.use("/", companyRouter);
-router.use("/", userRouter);
-router.use("/" , productRouter)
-router.use("/" , billRouter)
-router.use("/" , categoryRouter)
-router.use("/upload", express.static(path.join(process.cwd(), "upload"))); 
+router.use("/auth", authRouter);
+
+router.use(verifyToken);
+router.use("/account", accountRoute);
+router.use("/company", companyRouter);
+router.use("/user", userRouter);
+router.use("/product", productRouter);
+router.use("/bill", billRouter);
+router.use("/category", CatergoryRouter);
+router.use("/medical-store", medicalStoreRouter);
 
 export { router };

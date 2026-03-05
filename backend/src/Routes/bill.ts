@@ -1,13 +1,13 @@
 import express from "express";
 import { billController } from "../controllers";
-import { verifyToken } from "../middleware";
 
 const router = express.Router();
 
-router.get("/get/bills", verifyToken ,  billController.getAllBills);
-router.get("/get/bill/:id", verifyToken ,  billController.getBillById);
-router.post("/add/bill",  verifyToken , billController.addBill);
-router.put("/update/bill/:id",  verifyToken , billController.updateBill);
-router.delete("/delete/bill/:id", verifyToken ,  billController.deleteBill);
+router.post("/add", billController.add_bill);
+router.put("/:id", billController.update_bill_by_id);
+router.patch("/:id/status", billController.toggle_bill_active_status);
+router.delete("/delete/:id", billController.delete_bill_by_id);
+router.get("/all", billController.get_all_bill);
+router.get("/:id", billController.get_bill_by_id);
 
-export default router;
+export const billRouter = router;

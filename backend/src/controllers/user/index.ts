@@ -1,126 +1,171 @@
-import { responseMessage, status_code } from "../../common";
-import { authModel } from "../../model";
-import { joiValidationOptions, userValidation } from "../../validation";
+import mongoose from "mongoose";
+import bcrypt from "bcryptjs";
+import { responseMessage, ROLES, status_code } from "../../common";
+import { userModel } from "../../database";
+import { parsePagination, reqInfo, sendError, sendSuccess } from "../../helper";
+import { joiValidationOptions } from "../../validation";
+import { addUserValidation, userValidaiton, toggleUserStatusValidation } from "../../validation/user";
+import { getData, getFirstMatch, countData, createData, updateData } from "../../helper/database_service";
 
-const toPositiveInt = (value: any, fallback: number) => {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
-};
+const ObjectId = mongoose.Types.ObjectId;
 
-//================ get all users controller==============
-export const getAllUsers = async (req , res)=>{
-    try {
-        const hasPagination = req.query.page !== undefined || req.query.limit !== undefined;
-        const page = toPositiveInt(req.query.page, 1);
-        const limit = toPositiveInt(req.query.limit, 10);
-        const search = (req.query.search || "").toString().trim();
-        const sortBy = (req.query.sortBy || "createdAt").toString();
-        const order = (req.query.order || "desc").toString().toLowerCase() === "asc" ? 1 : -1;
+// ================= Add New User =================
+export const add_user = async (req, res) => {
+  reqInfo(req);
+  const { error, value } = addUserValidation.validate(req.body, joiValidationOptions);
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
 
-        const query: any = { isDeleted: false };
-        if (search) {
-          const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-          query.$or = [{ name: regex }, { email: regex }, { role: regex }];
-        }
-
-        const total = await authModel.Auth_Collection.countDocuments(query);
-        let userQuery = authModel.Auth_Collection
-          .find(query)
-          .sort({ [sortBy]: order });
-        if (hasPagination) {
-          userQuery = userQuery.skip((page - 1) * limit).limit(limit);
-        }
-        const users = await userQuery;
-
-        res.status(status_code.SUCCESS).json({
-          status : true,
-          message : responseMessage.allUsersGet_success,
-          users,
-          pagination: {
-            page,
-            limit,
-            total,
-            totalPages: hasPagination ? Math.ceil(total / limit) : (total > 0 ? 1 : 0),
-          },
-        })
-    } catch (error) {
-        res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.allUsersGet_failed , error})
-    }
-}
-
-// ============ Get Single User Controller ============
-export const getUserById = async (req, res) => {
   try {
-    const { id } = req.params;
+    const exists = await getFirstMatch(userModel, { email: value.email.toLowerCase(), isDeleted: false });
 
-    const user = await authModel.Auth_Collection.findOne({
-      _id: id,
+    if (exists) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("user"));
+
+    const hashedPassword = await bcrypt.hash(value.password, 10);
+    const user = await createData(userModel, {
+      name: value.name.trim(),
+      email: value.email.toLowerCase(),
+      password: hashedPassword,
+      phone: value.phone || "",
+      role: ROLES.user,
+      medicalStoreId: value.medicalStoreId,
+      isActive: true,
       isDeleted: false,
     });
 
-    if (!user) {
-      return res.status(404).json({
-        status: false,
-        message: "User not found",
-      });
-    }
-
-    res.status(200).json({
-      status: true,
-      message: "User fetched successfully",
-      user,
-    });
-
-  } catch (error) {
-    res.status(400).json({
-      status: false,
-      message: "Failed to fetch user",
-      error,
-    });
+    return sendSuccess(res, { user }, responseMessage.addDataSuccess("user"));
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, "Failed to add user", err);
   }
 };
 
+// ================= Get All Users =================
+export const get_all_user = async (req, res) => {
+  reqInfo(req);
 
-//============ Update User controller ===============
-export const updateUser = async(req ,res)=>{
+  try {
+    const { page, limit } = parsePagination(req.query);
+    const search = (req.query.search || "").toString().trim();
+    const query: any = { isDeleted: false };
 
-    const {error, value} = userValidation.userValidaiton.validate(req.body, joiValidationOptions)
+    if (search) query.name = { $regex: search, $options: "i" };
 
-    if (error) {
-        return res.status(400).json({
-        status: false,
-        message: error.details[0].message,
-        });
-    }
-    
-    try {
-        const {id} = req.params
-        const {email , name , role, phone, address, city, state, pincode} = value
-        const updateData: any = { email, name, role };
-        if (phone !== undefined) updateData.phone = phone;
-        if (address !== undefined) updateData.address = address;
-        if (city !== undefined) updateData.city = city;
-        if (state !== undefined) updateData.state = state;
-        if (pincode !== undefined) updateData.pincode = pincode;
+    const total = await countData(userModel, query);
 
-        const result = await authModel.Auth_Collection.findByIdAndUpdate(id , updateData , {new : true})
-        
-        res.status(status_code.SUCCESS).json({status : true , message : responseMessage.userUpdate_success , result})
-    } catch (error) {
-        res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.userUpdate_failed , error})
-    }
-}
+    const users = await getData(userModel, query, "-password", {
+      skip: (page - 1) * limit,
+      limit,
+      sort: { createdAt: -1 },
+    });
 
+    return sendSuccess(
+      res,
+      {
+        users,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      },
+      responseMessage.getDataSuccess("users")
+    );
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, "Failed to fetch users", err);
+  }
+};
 
-//============ Delete User controller ===============
-export const deleteUser = async(req ,res)=>{
-      try {
-        const {id} = req.params
-        
-        const result = await authModel.Auth_Collection.findByIdAndUpdate(id , {isDeleted : true} , {new : true})
-        
-        res.status(status_code.SUCCESS).json({status : true , message : responseMessage.userDeleted_success , result})
-    } catch (error) {
-        res.status(status_code.BAD_REQUEST).json({status : false , message : responseMessage.userDeleted_failed , error})
-    }
-}
+// ================= Get User By Id =================
+export const get_user_by_id = async (req, res) => {
+  reqInfo(req);
+
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id)) return sendError(res, status_code.BAD_REQUEST, responseMessage.invalidId("user id"));
+
+    const user = await getFirstMatch(userModel, { _id: id, isDeleted: false }, "-password");
+    if (!user)
+      return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("user"));
+
+    return sendSuccess(res, { user }, responseMessage.getDataSuccess("user"));
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, "Failed to fetch user", err);
+  }
+};
+
+// ================= Update User =================
+export const update_user_by_id = async (req, res) => {
+  reqInfo(req);
+  const { error, value } = userValidaiton.validate(req.body, joiValidationOptions);
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id))  return sendError(res, status_code.BAD_REQUEST, responseMessage.invalidId("user id"));
+
+    const user = await updateData(userModel, { _id: id, isDeleted: false },
+      {
+        name: value.name.trim(),
+        email: value.email.toLowerCase(),
+        phone: value.phone || "",
+        medicalStoreId: value.medicalStoreId,
+        role: ROLES.user,
+      },
+      { new: true, select: "-password" }
+    );
+
+    if (!user)
+      return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("user"));
+
+    return sendSuccess(res, { user }, responseMessage.updateDataSuccess("user"));
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, "Failed to update user", err);
+  }
+};
+
+// ================= Toggle User Status =================
+export const toggle_user_active_status = async (req, res) => {
+  reqInfo(req);
+
+  const { error, value } = toggleUserStatusValidation.validate(req.body, joiValidationOptions);
+  if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message);
+
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id))
+      return sendError(res, status_code.BAD_REQUEST, responseMessage.invalidId("user id"));
+
+    const user = await updateData(userModel, { _id: id, isDeleted: false }, { isActive: value.isActive }, { new: true, select: "-password" });
+
+    if (!user)
+      return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("user"));
+
+    return sendSuccess(res, { user }, "User status updated");
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, "Failed to update status", err);
+  }
+};
+
+// ================= Delete User =================
+export const delete_user_by_id = async (req, res) => {
+  reqInfo(req);
+
+  try {
+    const { id } = req.params;
+
+    if (!ObjectId.isValid(id))
+      return sendError(res, status_code.BAD_REQUEST, responseMessage.invalidId("user id"));
+
+    const user = await updateData(userModel, { _id: id, isDeleted: false }, { isDeleted: true }, { new: true });
+
+    if (!user)
+      return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("user"));
+
+    return sendSuccess(res, { user }, responseMessage.deleteDataSuccess("user"));
+  } catch (err) {
+    return sendError(res, status_code.BAD_REQUEST, "Failed to delete user", err);
+  }
+};

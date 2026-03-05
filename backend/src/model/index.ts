@@ -1,6 +1,0 @@
-export * as authModel from "./auth"
-export * as otpModel from "./otp"
-export * as companyModel from "./company"
-export * as productModel from "./product"
-export * as billModel from "./bill"
-export * as categoryModel from "./category"
