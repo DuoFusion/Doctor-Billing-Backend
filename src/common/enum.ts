@@ -6,8 +6,7 @@ export const ROLES = {
 
 export const BILL_STATUS = {
   paid: "Paid",
-  unpaid: "Unpaid",
-  cancelled: "Cancelled"
+  due: "Due",
 };
 
 export const TAX_TYPE = {

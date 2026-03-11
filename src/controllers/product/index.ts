@@ -1,6 +1,6 @@
 import { responseMessage, ROLES, status_code } from "../../common";
 import mongoose from "mongoose";
-import { userModel, companyModel, productModel } from "../../database";
+import { userModel, productModel } from "../../database";
 import { joiValidationOptions, productValidation } from "../../validation";
 import { sendSuccess, sendError, resolveUserMedicalStoreId, applyMedicalStoreScope, reqInfo, titleCase } from "../../helper";
 import { getData, getFirstMatch, countData, createData, updateData, findOneAndPopulate,} from "../../helper/database_service";
@@ -137,8 +137,7 @@ export const get_all_product = async (req, res) => {
     if (isActive !== undefined) query.isActive = String(isActive) === "true"
     if (search) {
       const regex = new RegExp(String(search), "i")
-      const companyIds = (await getData(companyModel, { isDeleted: false, name: regex }, { _id: 1 })).map((c: any) => c._id)
-      query.$or = [{ name: regex }, { company: { $in: companyIds } }]
+      query.$or = [{ name: regex }, { category: regex }]
     }
 
     const safeSortBy = sortBy === "name" ? "name" : "createdAt"
@@ -149,7 +148,7 @@ export const get_all_product = async (req, res) => {
     }
 
     const productsRaw: any = await getData(productModel, query, {}, options)
-    const products = await productModel.populate(productsRaw, [{ path: "company" }, { path: "userId", select: "name email role" }])
+    const products = await productModel.populate(productsRaw, [{ path: "userId", select: "name email role" }])
     const total = await countData(productModel, query)
 
     return sendSuccess(res, {
@@ -173,7 +172,7 @@ export const get_my_product = async (req, res) => {
     const query: any = { isDeleted: false }
     applyMedicalStoreScope(req, query)
     const productsRaw: any = await getData(productModel, query)
-    const products = await productModel.populate(productsRaw, [{ path: "company" }, { path: "userId", select: "name email role" }])
+    const products = await productModel.populate(productsRaw, [{ path: "userId", select: "name email role" }])
     return sendSuccess(res, { products }, responseMessage.getDataSuccess("my products"))
   } catch (error) {
     return sendError(res, status_code.BAD_REQUEST, responseMessage.customMessage("failed to fetch my products"), error?.message)
@@ -190,7 +189,7 @@ export const get_product_by_id = async (req, res) => {
     const query: any = { _id: id, isDeleted: false }
     applyMedicalStoreScope(req, query)
 
-    const response: any = await findOneAndPopulate(productModel, query, {}, {}, [{ path: "company" }, { path: "userId", select: "name email role" }])
+    const response: any = await findOneAndPopulate(productModel, query, {}, {}, [{ path: "userId", select: "name email role" }])
     if (!response) return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("product"))
     return sendSuccess(res, response, responseMessage.getDataSuccess("product"))
   } catch (error) {

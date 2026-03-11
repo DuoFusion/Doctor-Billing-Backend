@@ -47,8 +47,10 @@ export const add_company = async (req, res) => {
     let isExist = await companyModel.findOne({ name: value.name, userId: value.userId, isDeleted: false });
     if (isExist) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("name"), {});
 
-    isExist = await companyModel.findOne({ email: value.email, userId: value.userId, isDeleted: false });
-    if (isExist) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("email"), {});
+    if (value.email) {
+      isExist = await companyModel.findOne({ email: value.email, userId: value.userId, isDeleted: false });
+      if (isExist) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("email"), {});
+    }
 
     const response = await createData(companyModel, {
       ...value,
@@ -91,8 +93,10 @@ export const update_company_by_id = async (req, res) => {
     let isExist = await companyModel.findOne({ _id: { $ne: existing._id }, name: value.name, userId: existing.userId, isDeleted: false })
     if (isExist) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("name"), {})
 
-    isExist = await companyModel.findOne({ _id: { $ne: existing._id }, email: value.email, userId: existing.userId, isDeleted: false })
-    if (isExist) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("email"), {})
+    if (value.email) {
+      isExist = await companyModel.findOne({ _id: { $ne: existing._id }, email: value.email, userId: existing.userId, isDeleted: false })
+      if (isExist) return sendError(res, status_code.BAD_REQUEST, responseMessage.dataAlreadyExist("email"), {})
+    }
 
     if (req.user.role !== ROLES.admin) delete value.medicalStoreId
 

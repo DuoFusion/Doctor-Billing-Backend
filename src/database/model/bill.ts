@@ -26,11 +26,13 @@ const billItemSchema = new mongoose.Schema({
 // Bill Schema
 const billSchema = new mongoose.Schema({
   billNumber: { type: String }, 
+  purchaseDate: { type: Date, required: true },
   medicalStoreId: { type: mongoose.Schema.Types.ObjectId, ref: modelName.storeModelName, },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: modelName.userModelName,},
   items: [billItemSchema],
   subTotal: { type: Number,  },    
   totalGST: { type: Number,  },
+  gstEnabled: { type: Boolean, default: true },
   discount: { type: Number, default: 0 },        
   grandTotal: { type: Number,  },   
   paymentMethod: {type: String,enum: Object.values(PAYMENT_METHOD),},

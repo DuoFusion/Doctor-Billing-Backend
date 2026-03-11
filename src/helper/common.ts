@@ -1,8 +1,6 @@
 import { Request, Response } from "express";
 import mongoose from "mongoose";
 import { status_code } from "../common";
-import { billModel } from "../database";
-import { getData } from "./database_service";
 
 // ================= Pagination Helpers ==========================
 
@@ -157,27 +155,6 @@ export const resolveQuickDateRange = (quickDate: string) => {
 };
 
 
-
-// ================= Bill Number generater Helpers ==========================
-export const parseBillNumber = (bill: string) => {
-  const normalizedBill = String(bill || "").trim();
-  const directMatch = normalizedBill.match(/^(\d+)$/);
-  return directMatch ? Number(directMatch[1]) : 0;
-};
-
-export const formatBillNumber = (seq: number) => String(seq).padStart(2, "0");
-
-export const generateBillNumber = async (medicalStoreId?: string) => {
-  const query: any = { billNumber: { $in: [/^\d+$/] } };
-  if (medicalStoreId && mongoose.Types.ObjectId.isValid(medicalStoreId)) {
-    query.medicalStoreId = new mongoose.Types.ObjectId(medicalStoreId);
-  }
-
-  const bills = await getData(billModel, query, { billNumber: 1 });
-
-  const maxSeq = bills.reduce((max, b) => Math.max(max, parseBillNumber(b.billNumber || "")), 0);
-  return formatBillNumber(maxSeq + 1);
-};
 
 export const canAccessMedicalStore = (req: any, medicalStoreId: string) => {
   const userMedicalStoreId = resolveUserMedicalStoreId(req);

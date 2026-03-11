@@ -1,8 +1,8 @@
 import { userModel, billModel, productModel, storeModel } from "../../database";
-import { responseMessage, ROLES, status_code, TAX_TYPE, BILL_STATUS } from "../../common";
+import { responseMessage, ROLES, status_code, TAX_TYPE, BILL_STATUS, PAYMENT_METHOD } from "../../common";
 import mongoose from "mongoose";
 import { billValidation, joiValidationOptions } from "../../validation";
-import { reqInfo, sendSuccess, sendError, resolveQuickDateRange, startOfDay, endOfDay, buildBillPayload, generateBillNumber, canAccessMedicalStore, billQueryByRole } from "../../helper";
+import { reqInfo, sendSuccess, sendError, resolveQuickDateRange, startOfDay, endOfDay, buildBillPayload, canAccessMedicalStore, billQueryByRole } from "../../helper";
 import { getData, getFirstMatch, countData, updateData, findOneAndPopulate } from "../../helper/database_service";
 
 // ================== ADD BILL ==================
@@ -12,7 +12,9 @@ export const add_bill = async (req, res) => {
     const { error, value } = billValidation.addBillValidation.validate(req.body, joiValidationOptions)
     if (error) return sendError(res, status_code.BAD_REQUEST, error.details[0].message)
 
-    const { userId, items, discount = 0 } = value
+    const { userId, items, discount = 0, billNumber } = value
+    const gstEnabled = value.gstEnabled !== false;
+    const selectedCompany = value.company || undefined;
     let billUserId: any = req.user._id;
     let medicalStoreId: any = req.user?.medicalStoreId;
 
@@ -49,7 +51,7 @@ export const add_bill = async (req, res) => {
     const store: any = await getFirstMatch(storeModel, { _id: storeId, isDeleted: false }, { taxType: 1, taxPercent: 1 });
     if (!store) return sendError(res, status_code.BAD_REQUEST, responseMessage.getDataNotFound("medical store"));
     const taxType = String(store.taxType || TAX_TYPE.SGST_CGST);
-    const taxPercent = Math.max(Number(store.taxPercent) || 0, 0);
+    const taxPercent = gstEnabled ? Math.max(Number(store.taxPercent) || 0, 0) : 0;
 
     let srNo = 1;
     let subTotal = 0;
@@ -97,7 +99,7 @@ export const add_bill = async (req, res) => {
         sgst,
         cgst,
         igst,
-        company: product.company,
+        company: selectedCompany,
       });
 
       subTotal += total;
@@ -105,39 +107,33 @@ export const add_bill = async (req, res) => {
     }
 
     const grandTotal = subTotal + totalGST - discount;
+    const billStatus = value.paymentMethod === PAYMENT_METHOD.cash ? BILL_STATUS.paid : BILL_STATUS.due;
 
-    let billNumber = "";
     let response: any;
-    const maxRetries = 3;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      billNumber = await generateBillNumber(storeId);
-      try {
-        response = await billModel.create(
-          buildBillPayload(value, {
-            billNumber,
-            userId: billUserId,
-            medicalStoreId: storeId,
-            items: processedItems,
-            subTotal,
-            totalGST,
-            discount,
-            grandTotal,
-            billStatus: BILL_STATUS.paid,
-            isActive: true,
-          })
-        );
-        break;
-      } catch (err: any) {
-        const isDuplicateKeyError =
-          err &&
-          (err.code === 11000 || err.name === "MongoServerError") &&
-          String(err.message || "").includes("billNumber");
-        if (isDuplicateKeyError && attempt < maxRetries) {
-          continue;
-        }
-        throw err;
+    try {
+      response = await billModel.create(
+        buildBillPayload(value, {
+          billNumber,
+          userId: billUserId,
+          medicalStoreId: storeId,
+          items: processedItems,
+          subTotal,
+          totalGST,
+          discount,
+          grandTotal,
+          billStatus,
+          isActive: true,
+        })
+      );
+    } catch (err: any) {
+      const isDuplicateKeyError =
+        err &&
+        (err.code === 11000 || err.name === "MongoServerError") &&
+        String(err.message || "").includes("billNumber");
+      if (isDuplicateKeyError) {
+        return sendError(res, status_code.BAD_REQUEST, "Bill number already exists for this medical store");
       }
+      throw err;
     }
 
     return sendSuccess(res, response, responseMessage.addDataSuccess("bill"));
@@ -158,7 +154,9 @@ export const update_bill_by_id = async (req, res) => {
     const existingBill = await getFirstMatch(billModel, billQueryByRole(req, id))
     if (!existingBill) return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("bill"))
 
-    const { userId, items, discount = 0 } = value;
+    const { userId, items, discount = 0, billNumber } = value;
+    const gstEnabled = value.gstEnabled !== false;
+    const selectedCompany = value.company || undefined;
     let billUserId: any = req.user._id;
     let medicalStoreId: any = req.user?.medicalStoreId;
 
@@ -194,7 +192,7 @@ export const update_bill_by_id = async (req, res) => {
     const store: any = await getFirstMatch(storeModel, { _id: storeId, isDeleted: false }, { taxType: 1, taxPercent: 1 });
     if (!store) return sendError(res, status_code.BAD_REQUEST, responseMessage.getDataNotFound("medical store"));
     const taxType = String(store.taxType || TAX_TYPE.SGST_CGST);
-    const taxPercent = Math.max(Number(store.taxPercent) || 0, 0);
+    const taxPercent = gstEnabled ? Math.max(Number(store.taxPercent) || 0, 0) : 0;
 
     const productIds = Array.from(
       new Set(
@@ -256,7 +254,7 @@ export const update_bill_by_id = async (req, res) => {
         sgst,
         cgst,
         igst,
-        company: product.company,
+        company: selectedCompany,
       });
 
       subTotal += total;
@@ -264,22 +262,36 @@ export const update_bill_by_id = async (req, res) => {
     }
 
     const grandTotal = subTotal + totalGST - discount;
+    const billStatus = value.paymentMethod === PAYMENT_METHOD.cash ? BILL_STATUS.paid : BILL_STATUS.due;
 
-    const response = await updateData(
-      billModel,
-      billQueryByRole(req, id),
-      buildBillPayload(value, {
-        userId: billUserId,
-        medicalStoreId: storeId,
-        items: processedItems,
-        subTotal,
-        totalGST,
-        discount,
-        grandTotal,
-        billStatus: BILL_STATUS.paid,
-      }),
-      { new: true }
-    );
+    let response: any;
+    try {
+      response = await updateData(
+        billModel,
+        billQueryByRole(req, id),
+        buildBillPayload(value, {
+          billNumber,
+          userId: billUserId,
+          medicalStoreId: storeId,
+          items: processedItems,
+          subTotal,
+          totalGST,
+          discount,
+          grandTotal,
+          billStatus,
+        }),
+        { new: true }
+      );
+    } catch (err: any) {
+      const isDuplicateKeyError =
+        err &&
+        (err.code === 11000 || err.name === "MongoServerError") &&
+        String(err.message || "").includes("billNumber");
+      if (isDuplicateKeyError) {
+        return sendError(res, status_code.BAD_REQUEST, "Bill number already exists for this medical store");
+      }
+      throw err;
+    }
 
     if (!response) return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("bill"));
 
@@ -336,7 +348,7 @@ export const get_all_bill = async (req, res) => {
     const bills = await billModel.populate(billsRaw, [
       { path: "userId", select: "name medicalName email phone address city state pincode pan gstin signatureImg" },
       { path: "medicalStoreId", select: "name address pincode state panNumber gstNumber signatureImg" },
-      { path: "items.product", select: "name category expiry mrp sellingPrice company" },
+      { path: "items.product", select: "name category expiry mrp sellingPrice" },
       { path: "items.company", select: "name gstNumber phone email address city state pincode logoImage" },
     ])
 
@@ -365,7 +377,7 @@ export const get_bill_by_id = async (req, res) => {
       .findOne(billQueryByRole(req, id))
       .populate("userId", "name medicalName email phone address city state pincode pan gstin signatureImg")
       .populate("medicalStoreId", "name address pincode state panNumber gstNumber signatureImg")
-      .populate("items.product", "name category expiry mrp sellingPrice company")
+      .populate("items.product", "name category expiry mrp sellingPrice")
       .populate("items.company", "name gstNumber phone email address city state pincode logoImage")
 
     if (!response) return sendError(res, status_code.NOT_FOUND, responseMessage.getDataNotFound("bill"))
