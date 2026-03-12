@@ -3,7 +3,7 @@ import { objectIdField, paymentMethodField } from "./common";
 
 const billItemSchema = Joi.object({
   product: objectIdField.required(),
-  qty: Joi.number().integer().min(1).max(10000).required(),
+  qty: Joi.number().integer().min(0).required(),
   freeQty: Joi.number().integer().min(0).max(10000).default(0),
   mrp: Joi.number().min(0).required(),
   rate: Joi.number().min(0).required(),
@@ -16,7 +16,7 @@ export const addBillValidation = Joi.object({
   medicalStoreId: objectIdField.optional(),
   company: objectIdField.optional(),
   gstEnabled: Joi.boolean().default(true),
-  items: Joi.array().items(billItemSchema).min(1).required(),
+  items: Joi.array().items(billItemSchema).required(),
   paymentMethod: paymentMethodField.required(),
   discount: Joi.number().min(0).max(1000000).default(0),
 });

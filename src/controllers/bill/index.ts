@@ -72,11 +72,11 @@ export const add_bill = async (req, res) => {
       const qty = Number(item.qty) || 0;
       const freeQty = Math.max(Number(item.freeQty) || 0, 0);
 
-      if (qty <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid quantity for ${product.name}`);
+      // if (qty <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid quantity for ${product.name}`);
 
       const mrp = Number(item.mrp) || 0;
       const rate = Number(item.rate) || 0;
-      if (rate <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid rate for ${product.name}`);
+      // if (rate <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid rate for ${product.name}`);
 
       const total = rate * qty;
       const gstAmount = (total * taxPercent) / 100;
@@ -227,11 +227,9 @@ export const update_bill_by_id = async (req, res) => {
       const qty = Number(item.qty) || 0;
       const freeQty = Math.max(Number(item.freeQty) || 0, 0);
 
-      if (qty <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid quantity for ${product.name}`);
 
       const mrp = Number(item.mrp) || 0;
       const rate = Number(item.rate) || 0;
-      if (rate <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid rate for ${product.name}`);
 
       const total = rate * qty;
       const gstAmount = (total * taxPercent) / 100;
@@ -322,13 +320,20 @@ export const delete_bill_by_id = async (req, res) => {
 export const get_all_bill = async (req, res) => {
   reqInfo(req)
   try {
-    const { page, limit, search, fromDate, toDate, quickDate, isActive } = req.query
+    const { page, limit, search, fromDate, toDate, quickDate, isActive, companyId } = req.query
     const pageNo = parseInt(page as string) || 1
     const limitNo = parseInt(limit as string) || 10
     const query: any = billQueryByRole(req)
 
     if (search) query.billNumber = new RegExp(String(search).trim(), "i")
     if (isActive !== undefined) query.isActive = String(isActive) === "true"
+    if (companyId) {
+      const companyIdStr = String(companyId || "").trim();
+      if (!mongoose.Types.ObjectId.isValid(companyIdStr)) {
+        return sendError(res, status_code.BAD_REQUEST, "Invalid company id");
+      }
+      query["items.company"] = companyIdStr;
+    }
 
     const range = resolveQuickDateRange(quickDate?.toString().trim().toLowerCase())
     if (range) {

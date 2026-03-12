@@ -66,24 +66,30 @@ export const delete_user_by_id = async (req, res) => {
 export const get_all_user = async (req, res) => {
   reqInfo(req)
   try {
-    const { page, limit, search, isActive } = req.query
-    const pageNo = parseInt(page as string) || 1
-    const limitNo = parseInt(limit as string) || 10
+    const { page, limit, search, isActive, all } = req.query
+    const isAll = String(all || "").toLowerCase() === "true"
+    const pageNo = isAll ? 1 : (parseInt(page as string) || 1)
+    const limitNo = isAll ? 0 : (parseInt(limit as string) || 10)
     const query: any = { isDeleted: false, role: { $ne: ROLES.admin } }
 
     if (search) query.$or = [{ name: { $regex: search, $options: "i" } }, { email: { $regex: search, $options: "i" } }]
     if (isActive !== undefined) query.isActive = String(isActive) === "true"
 
     const total = await countData(userModel, query)
-    const users = await getData(userModel, query, "-password", { sort: { createdAt: -1 }, skip: (pageNo - 1) * limitNo, limit: limitNo })
+    const options: any = { sort: { createdAt: -1 } }
+    if (!isAll) {
+      options.skip = (pageNo - 1) * limitNo
+      options.limit = limitNo
+    }
+    const users = await getData(userModel, query, "-password", options)
 
     return sendSuccess(res, {
       users,
       pagination: {
         page: pageNo,
-        limit: limitNo,
+        limit: isAll ? (total || 1) : limitNo,
         total,
-        totalPages: Math.ceil(total / limitNo)
+        totalPages: isAll ? (total > 0 ? 1 : 0) : Math.ceil(total / limitNo)
       },
     }, responseMessage.getDataSuccess("users"))
   } catch (err) {

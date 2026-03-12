@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 import { userModel, productModel } from "../../database";
 import { joiValidationOptions, productValidation } from "../../validation";
 import { sendSuccess, sendError, resolveUserMedicalStoreId, applyMedicalStoreScope, reqInfo, titleCase } from "../../helper";
-import { getData, getFirstMatch, countData, createData, updateData, findOneAndPopulate, } from "../../helper/database_service";
+import { getData, getFirstMatch, countData, createData, updateData, findOneAndPopulate,} from "../../helper/database_service";
 
 // ================= Add New Product =================
 export const add_product = async (req, res) => {
@@ -127,41 +127,44 @@ export const delete_product_by_id = async (req, res) => {
 export const get_all_product = async (req, res) => {
   reqInfo(req)
   try {
-    const { page, limit, search, category, sortBy, order, isActive } = req.query
+    const { page, limit, search, category, billable, sortBy, order, isActive, all } = req.query
+    const isAll = String(all || "").toLowerCase() === "true"
+    const pageNo = isAll ? 1 : (parseInt(page) || 1)
+    const limitNo = isAll ? 0 : (parseInt(limit) || 10)
+    const query: any = { isDeleted: false }
 
-    let criteria: any = { isDeleted: false }, options: any = { lean: true }
-
-    applyMedicalStoreScope(req, criteria)
-    if (category) criteria.category = category
-    if (isActive !== undefined) criteria.isActive = String(isActive) === "true"
+    applyMedicalStoreScope(req, query)
+    if (category) query.category = category
+    if (isActive !== undefined) query.isActive = String(isActive) === "true"
     if (search) {
-      criteria.$or = [
-        { name: { $regex: search, $options: "si" } },
-        { category: { $regex: search, $options: "si" } }
-      ]
+      const regex = new RegExp(String(search), "i")
+      query.$or = [{ name: regex }, { category: regex }]
     }
 
-    if (sortBy) {
-      const safeSortBy = sortBy === "name" ? "name" : "createdAt"
-      options.sort = { [safeSortBy]: String(order || "desc").toLowerCase() === "asc" ? 1 : -1 }
+    const safeSortBy = sortBy === "name" ? "name" : "createdAt"
+    const options: any = {
+      sort: { [safeSortBy]: String(order || "desc").toLowerCase() === "asc" ? 1 : -1 },
     }
 
-    if (page && limit) {
-      options.skip = (parseInt(page) - 1) * parseInt(limit)
-      options.limit = parseInt(limit)
+    if (!isAll) {
+      options.skip = (pageNo - 1) * limitNo
+      options.limit = limitNo
     }
 
-    const productsRaw: any = await getData(productModel, criteria, {}, options)
+    const productsRaw: any = await getData(productModel, query, {}, options)
     const products = await productModel.populate(productsRaw, [{ path: "userId", select: "name email role" }])
-    const total = await countData(productModel, criteria)
+    const total = await countData(productModel, query)
+
+    const resolvedLimit = isAll ? (total || 1) : limitNo
+    const totalPages = isAll ? (total > 0 ? 1 : 0) : Math.ceil(total / limitNo)
 
     return sendSuccess(res, {
       products,
       pagination: {
-        page: page,
-        limit: limit,
+        page: pageNo,
+        limit: resolvedLimit,
         total,
-        totalPages: Math.ceil(total / parseInt(limit || 10))
+        totalPages
       }
     }, responseMessage.getDataSuccess("products"))
   } catch (error) {

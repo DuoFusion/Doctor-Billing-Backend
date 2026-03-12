@@ -22,7 +22,7 @@ export const add_company = async (req, res) => {
     if (req.user.role === ROLES.admin) {
       if (!value.userId) return sendError(res, status_code.BAD_REQUEST, responseMessage.customMessage("please select user"));
 
-      const selectedUser: any = await userModel.findOne({ _id: value.userId, isDeleted: false, role: { $ne: ROLES.admin } }, { _id: 1, medicalStoreId: 1, medicalStoreIds: 1 });
+      const selectedUser: any = await userModel.findOne( { _id: value.userId, isDeleted: false, role: { $ne: ROLES.admin } }, { _id: 1, medicalStoreId: 1, medicalStoreIds: 1 });
       if (!selectedUser) return sendError(res, status_code.BAD_REQUEST, responseMessage.getDataNotFound("selected user"));
 
       value.userId = selectedUser._id;
@@ -138,43 +138,56 @@ export const get_all_company = async (req, res) => {
   if (!req.user) return sendError(res, status_code.UNAUTHORIZED, responseMessage.notAuthenticated)
 
   try {
-    const { page, limit, search, addedBy, sortBy, order, isActive } = req.query
-    let criteria: any = { isDeleted: false }, options: any = { lean: true }
+    const { page, limit, search, addedBy, sortBy, order, isActive, all } = req.query
+    const isAll = String(all || "").toLowerCase() === "true"
+    const pageNo = isAll ? 1 : (parseInt(page) || 1)
+    const limitNo = isAll ? 0 : (parseInt(limit) || 10)
+    const query: any = { isDeleted: false }
 
-    applyMedicalStoreScope(req, criteria, true)
+    applyMedicalStoreScope(req, query, true)
 
     if (req.user.role === ROLES.admin && addedBy && mongoose.Types.ObjectId.isValid(addedBy as string)) {
-      criteria.userId = new mongoose.Types.ObjectId(addedBy as string)
+      query.userId = new mongoose.Types.ObjectId(addedBy as string)
     }
 
-    if (isActive !== undefined) criteria.isActive = String(isActive) === "true"
+    if (isActive !== undefined) query.isActive = String(isActive) === "true"
 
     if (search) {
-      criteria.$or = [
-        { name: { $regex: search, $options: "si" } },
-        { email: { $regex: search, $options: 'si' } },
-      ]
+      query.$or = [{ name: { $regex: search, $options: "si" } }]
+      if (req.user.role === ROLES.admin) {
+        const users: any = await getData(
+          userModel,
+          { isDeleted: false, $or: [{ name: { $regex: search, $options: "si" } }, { email: { $regex: search, $options: "si" } }] },
+          { _id: 1 }
+        )
+        if (users.length) query.$or.push({ userId: { $in: users.map((u: any) => u._id) } })
+      }
     }
 
-    options.sort = sortBy === "addedBy" ? { userId: String(order || "desc").toLowerCase() === "asc" ? 1 : -1 } : { createdAt: String(order || "desc").toLowerCase() === "asc" ? 1 : -1 }
-
-    if (page && limit) {
-      options.skip = (parseInt(page) - 1) * parseInt(limit)
-      options.limit = parseInt(limit)
+    const options: any = {
+      sort: sortBy === "addedBy" ? { userId: String(order || "desc").toLowerCase() === "asc" ? 1 : -1 } : { createdAt: String(order || "desc").toLowerCase() === "asc" ? 1 : -1 },
     }
 
-    const companiesRaw: any = await getData(companyModel, criteria, {}, options)
+    if (!isAll) {
+      options.skip = (pageNo - 1) * limitNo
+      options.limit = limitNo
+    }
+
+    const companiesRaw: any = await getData(companyModel, query, {}, options)
     const companies: any = await companyModel.populate(companiesRaw, [{ path: "userId", select: "name email" }])
-    const total = await countData(companyModel, criteria)
+    const total = await countData(companyModel, query)
     const data = companies.map((c: any) => (typeof c.toObject === "function" ? c.toObject() : c))
+
+    const resolvedLimit = isAll ? (total || 1) : limitNo
+    const totalPages = isAll ? (total > 0 ? 1 : 0) : Math.ceil(total / limitNo)
 
     return sendSuccess(res, {
       data,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNo,
+        limit: resolvedLimit,
         total,
-        totalPages: Math.ceil(total / parseInt(limit))
+        totalPages
       }
     }, responseMessage.getDataSuccess("companies"))
   } catch (err) {
