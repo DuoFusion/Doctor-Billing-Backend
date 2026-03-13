@@ -322,7 +322,7 @@ export const delete_bill_by_id = async (req, res) => {
 export const get_all_bill = async (req, res) => {
   reqInfo(req)
   try {
-    const { page, limit, search, fromDate, toDate, quickDate, isActive, companyId } = req.query
+    const { page, limit, search, fromDate, toDate, quickDate, isActive, companyId, billStatus } = req.query
     const pageNo = parseInt(page as string) || 1
     const limitNo = parseInt(limit as string) || 10
     const query: any = billQueryByRole(req)
@@ -335,6 +335,13 @@ export const get_all_bill = async (req, res) => {
         return sendError(res, status_code.BAD_REQUEST, "Invalid company id");
       }
       query["items.company"] = companyIdStr;
+    }
+    if (billStatus) {
+      const statusValue = String(billStatus || "").trim();
+      if (!Object.values(BILL_STATUS).includes(statusValue)) {
+        return sendError(res, status_code.BAD_REQUEST, "Invalid bill status");
+      }
+      query.billStatus = statusValue;
     }
 
     const range = resolveQuickDateRange(quickDate?.toString().trim().toLowerCase())
