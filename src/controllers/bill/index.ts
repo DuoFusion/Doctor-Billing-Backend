@@ -72,11 +72,9 @@ export const add_bill = async (req, res) => {
       const qty = Number(item.qty) || 0;
       const freeQty = Math.max(Number(item.freeQty) || 0, 0);
 
-      // if (qty <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid quantity for ${product.name}`);
 
       const mrp = Number(item.mrp) || 0;
       const rate = Number(item.rate) || 0;
-      // if (rate <= 0) return sendError(res, status_code.BAD_REQUEST, `Invalid rate for ${product.name}`);
 
       const total = rate * qty;
       const gstAmount = (total * taxPercent) / 100;
@@ -106,7 +104,9 @@ export const add_bill = async (req, res) => {
       totalGST += gstAmount;
     }
 
-    const grandTotal = subTotal + totalGST - discount;
+    const discountedSubTotal = Math.max(subTotal - discount, 0);
+    totalGST = (discountedSubTotal * taxPercent) / 100;
+    const grandTotal = discountedSubTotal + totalGST;
     const billStatus = value.paymentMethod === PAYMENT_METHOD.cash ? BILL_STATUS.paid : BILL_STATUS.due;
 
     let response: any;
@@ -259,7 +259,9 @@ export const update_bill_by_id = async (req, res) => {
       totalGST += gstAmount;
     }
 
-    const grandTotal = subTotal + totalGST - discount;
+    const discountedSubTotal = Math.max(subTotal - discount, 0);
+    totalGST = (discountedSubTotal * taxPercent) / 100;
+    const grandTotal = discountedSubTotal + totalGST;
     const billStatus = value.paymentMethod === PAYMENT_METHOD.cash ? BILL_STATUS.paid : BILL_STATUS.due;
 
     let response: any;
@@ -337,7 +339,7 @@ export const get_all_bill = async (req, res) => {
 
     const range = resolveQuickDateRange(quickDate?.toString().trim().toLowerCase())
     if (range) {
-      query.createdAt = { $gte: range.from, $lte: range.to }
+      query.purchaseDate = { $gte: range.from, $lte: range.to }
     } else if (fromDate || toDate) {
       const filter: any = {}
       if (fromDate) filter.$gte = startOfDay(new Date(fromDate as string))
@@ -345,11 +347,12 @@ export const get_all_bill = async (req, res) => {
       if (filter.$gte && filter.$lte && filter.$gte > filter.$lte) {
         return sendError(res, status_code.BAD_REQUEST, "fromDate cannot be greater than toDate")
       }
-      query.createdAt = filter
+      query.purchaseDate = filter
     }
 
     const total = await countData(billModel, query)
-    const billsRaw: any = await getData(billModel, query, {}, { sort: { createdAt: -1 }, skip: (pageNo - 1) * limitNo, limit: limitNo })
+    const billsRaw: any = await getData( billModel, query,  {},  { sort: { purchaseDate: -1, createdAt: -1 }, skip: (pageNo - 1) * limitNo, limit: limitNo } )
+    
     const bills = await billModel.populate(billsRaw, [
       { path: "userId", select: "name medicalName email phone address city state pincode pan gstin signatureImg" },
       { path: "medicalStoreId", select: "name address pincode state panNumber gstNumber signatureImg" },
@@ -357,8 +360,7 @@ export const get_all_bill = async (req, res) => {
       { path: "items.company", select: "name gstNumber phone email address city state pincode logoImage" },
     ])
 
-    return sendSuccess(res, {
-      bills,
+    return sendSuccess(res, { bills,
       pagination: {
         page: pageNo,
         limit: limitNo,

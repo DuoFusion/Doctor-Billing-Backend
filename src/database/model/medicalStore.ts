@@ -7,6 +7,10 @@ const storeSchema = new mongoose.Schema({
     city: { type: String, default: "" },
     state: { type: String, default: "" },
     pincode: { type: String, default: "" },
+    defaultCompanyAddress: { type: String, default: "" },
+    defaultCompanyCity: { type: String, default: "" },
+    defaultCompanyState: { type: String, default: "" },
+    defaultCompanyPincode: { type: String, default: "" },
     panNumber: { type: String, default: "" }, // pan number
     gstNumber: { type: String, default: "" }, // gst number
     taxType: { type: String, enum: Object.values(TAX_TYPE), default: TAX_TYPE.SGST_CGST },
